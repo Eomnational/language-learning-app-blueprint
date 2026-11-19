@@ -1,0 +1,334 @@
+openapi: 3.0.3
+info:
+  title: Language Learning API - MVP Contract Example
+  version: 1.0.0
+  description: >-
+    API interface contract starter. Not all implementation endpoints are expanded.
+    All question bodies delivered to mobile MUST omit answer_key.
+servers:
+  - url: https://api.example.com/api/v1
+security:
+  - bearerAuth: []
+paths:
+  /exams:
+    get:
+      operationId: listExams
+      summary: List supported exam families and editions
+      security: []
+      responses:
+        '200':
+          description: Exam catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Exam'
+  /packages:
+    get:
+      operationId: listPackages
+      summary: List packages by exam and level
+      parameters:
+        - in: query
+          name: exam
+          schema: {type: string, example: JLPT}
+        - in: query
+          name: level
+          schema: {type: string, example: N2}
+        - in: query
+          name: cursor
+          schema: {type: string}
+      responses:
+        '200':
+          description: Package list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Package'
+                  next_cursor: {type: string, nullable: true}
+  /practice/sessions:
+    post:
+      operationId: createSession
+      summary: Create practice or mock session and freeze question versions
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [exam_edition_id, package_id, mode]
+              properties:
+                exam_edition_id: {type: string, format: uuid}
+                package_id: {type: string, format: uuid}
+                mode: {type: string, enum: [practice, mock, review]}
+                question_count: {type: integer, minimum: 1, maximum: 300}
+      responses:
+        '201':
+          description: Created session
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Session'}
+  /practice/sessions/{session_id}:
+    get:
+      operationId: getSession
+      summary: Resume with non-sensitive fixed question snapshot
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Practice session
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Session'}
+  /practice/sessions/{session_id}/attempts:batch:
+    post:
+      operationId: pushAttempts
+      summary: Submit append-only answer events idempotently
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [attempts]
+              properties:
+                attempts:
+                  type: array
+                  maxItems: 100
+                  items: {$ref: '#/components/schemas/AttemptInput'}
+      responses:
+        '200':
+          description: Per-attempt acknowledgment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: array
+                    items: {type: string, format: uuid}
+                  duplicates:
+                    type: array
+                    items: {type: string, format: uuid}
+                  rejected:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        client_attempt_id: {type: string, format: uuid}
+                        code: {type: string}
+  /practice/sessions/{session_id}/submit:
+    post:
+      operationId: submitSession
+      summary: Finalize session and trigger grading
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Grading started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [grading, graded]}
+  /practice/sessions/{session_id}/result:
+    get:
+      operationId: getSessionResult
+      summary: Result and explanations after release rules allow
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Result may still contain pending essay/speaking items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [grading, graded]}
+                  raw_score: {type: number, nullable: true}
+                  display_score: {type: string, nullable: true}
+                  feedback: {type: array, items: {type: object}}
+  /sync/push:
+    post:
+      operationId: pushSyncEvents
+      summary: Push offline device events
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_id, events]
+              properties:
+                device_id: {type: string, format: uuid}
+                events:
+                  type: array
+                  maxItems: 100
+                  items: {$ref: '#/components/schemas/SyncEvent'}
+      responses:
+        '200':
+          description: Idempotent acknowledgments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted_ids: {type: array, items: {type: string, format: uuid}}
+                  duplicate_ids: {type: array, items: {type: string, format: uuid}}
+                  rejected: {type: array, items: {type: object}}
+  /sync/changes:
+    get:
+      operationId: getSyncChanges
+      summary: Read next page of user-scoped events
+      parameters:
+        - in: query
+          name: cursor
+          schema: {type: integer, format: int64, minimum: 0, default: 0}
+      responses:
+        '200':
+          description: Incremental changes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  next_cursor: {type: integer, format: int64}
+                  has_more: {type: boolean}
+                  events:
+                    type: array
+                    items: {$ref: '#/components/schemas/SyncEvent'}
+  /speech/jobs:
+    post:
+      operationId: createSpeechJob
+      summary: Evaluate previously uploaded recording
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [attempt_id, asset_id]
+              properties:
+                attempt_id: {type: string, format: uuid}
+                asset_id: {type: string, format: uuid}
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id: {type: string, format: uuid}
+                  status: {type: string, example: queued}
+  /me/entitlements:
+    get:
+      operationId: getEntitlements
+      summary: Effective benefits owned by user
+      responses:
+        '200':
+          description: Benefits
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  benefits: {type: array, items: {type: string}}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    SessionId:
+      in: path
+      name: session_id
+      required: true
+      schema: {type: string, format: uuid}
+    IdempotencyKey:
+      in: header
+      name: X-Idempotency-Key
+      required: true
+      schema: {type: string, format: uuid}
+  schemas:
+    Exam:
+      type: object
+      required: [id, code, title]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string, example: TOEFL_IBT}
+        title: {type: string}
+        editions: {type: array, items: {type: string}}
+    Package:
+      type: object
+      required: [id, title, exam_edition_id]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        exam_edition_id: {type: string, format: uuid}
+        level: {type: string, nullable: true}
+        available_offline: {type: boolean}
+    Question:
+      type: object
+      description: Public safe payload; never include answer_key
+      required: [id, version, interaction, body, answer_schema]
+      properties:
+        id: {type: string, format: uuid}
+        version: {type: integer}
+        interaction: {type: string, enum: [single_choice, multiple_choice, cloze, reorder, short_text, essay, audio_response]}
+        body: {type: object, additionalProperties: true}
+        stimulus: {type: object, nullable: true, additionalProperties: true}
+        answer_schema: {type: object, additionalProperties: true}
+        render_hints: {type: object, additionalProperties: true}
+    Session:
+      type: object
+      required: [id, mode, status, items]
+      properties:
+        id: {type: string, format: uuid}
+        mode: {type: string, enum: [practice, mock, review]}
+        status: {type: string}
+        deadline_at: {type: string, format: date-time, nullable: true}
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              session_item_id: {type: string, format: uuid}
+              position: {type: integer}
+              question: {$ref: '#/components/schemas/Question'}
+    AttemptInput:
+      type: object
+      required: [client_attempt_id, session_item_id, answer, occurred_at]
+      properties:
+        client_attempt_id: {type: string, format: uuid}
+        session_item_id: {type: string, format: uuid}
+        answer: {type: object, additionalProperties: true}
+        occurred_at: {type: string, format: date-time}
+    SyncEvent:
+      type: object
+      required: [client_event_id, event_type, payload]
+      properties:
+        client_event_id: {type: string, format: uuid}
+        event_type: {type: string}
+        payload: {type: object, additionalProperties: true}
+        seq: {type: integer, format: int64, nullable: true}
+        created_at: {type: string, format: date-time, nullable: true}
