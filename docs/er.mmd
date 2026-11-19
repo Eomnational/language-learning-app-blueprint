@@ -1,0 +1,99 @@
+erDiagram
+    USERS ||--o{ DEVICES : owns
+    EXAMS ||--o{ EXAM_EDITIONS : versions
+    EXAM_EDITIONS ||--o{ CONTENT_PACKAGES : categorizes
+    CONTENT_PACKAGES ||--o{ SECTIONS : contains
+    SECTIONS ||--o{ QUESTIONS : contains
+    CONTENT_PACKAGES ||--o{ STIMULI : contains
+    STIMULI ||--o{ STIMULUS_VERSIONS : revisions
+    QUESTIONS ||--o{ QUESTION_VERSIONS : published_as
+    STIMULUS_VERSIONS o|--o{ QUESTION_VERSIONS : embedded_in
+    QUESTION_VERSIONS ||--o{ QUESTION_MEDIA : uses
+    MEDIA_ASSETS ||--o{ QUESTION_MEDIA : referenced_by
+    USERS ||--o{ PRACTICE_SESSIONS : starts
+    PRACTICE_SESSIONS ||--o{ SESSION_ITEMS : snapshots
+    QUESTION_VERSIONS ||--o{ SESSION_ITEMS : frozen_at
+    SESSION_ITEMS ||--o{ ATTEMPTS : answered_by
+    USERS ||--o{ ATTEMPTS : submits
+    USERS ||--o{ QUESTION_PROGRESS : owns
+    QUESTIONS ||--o{ QUESTION_PROGRESS : measures
+    USERS ||--o{ REVIEW_SCHEDULE : revises
+    QUESTIONS ||--o{ REVIEW_SCHEDULE : scheduled_for
+    ATTEMPTS ||--o| SPEECH_JOBS : evaluates
+    USERS ||--o{ PURCHASE_ORDERS : pays
+    USERS ||--o{ ENTITLEMENTS : granted
+    USERS ||--o{ SYNC_EVENTS : receives
+    USERS {
+      uuid id PK
+      text email UK
+      timestamptz created_at
+    }
+    EXAMS {
+      uuid id PK
+      text code UK
+      text title
+    }
+    EXAM_EDITIONS {
+      uuid id PK
+      uuid exam_id FK
+      text edition_code
+      jsonb blueprint
+      jsonb score_policy
+    }
+    CONTENT_PACKAGES {
+      uuid id PK
+      uuid exam_edition_id FK
+      text title
+      text status
+    }
+    QUESTIONS {
+      uuid id PK
+      uuid section_id FK
+      uuid stimulus_id FK
+      text interaction
+    }
+    QUESTION_VERSIONS {
+      uuid id PK
+      uuid question_id FK
+      int version_no
+      jsonb body
+      jsonb answer_key
+    }
+    PRACTICE_SESSIONS {
+      uuid id PK
+      uuid user_id FK
+      uuid exam_edition_id FK
+      text mode
+      text status
+    }
+    SESSION_ITEMS {
+      uuid id PK
+      uuid session_id FK
+      uuid question_version_id FK
+      int position
+    }
+    ATTEMPTS {
+      uuid id PK
+      uuid session_item_id FK
+      uuid user_id FK
+      uuid client_attempt_id UK
+      jsonb answer
+      text grade_status
+    }
+    REVIEW_SCHEDULE {
+      uuid user_id FK
+      uuid question_id FK
+      timestamptz due_at
+    }
+    PURCHASE_ORDERS {
+      uuid id PK
+      uuid user_id FK
+      text platform
+      text external_transaction_id UK
+    }
+    ENTITLEMENTS {
+      uuid id PK
+      uuid user_id FK
+      text benefit_key
+      timestamptz expires_at
+    }
